@@ -16,6 +16,7 @@ println "reads: $params.reads"
 println "ref: $params.ref"
 println "output: $params.out"
 println "gatk temp dir: $params.tmpdir"
+println "snpeff config: $params.snpeff_config"
 println "snpeff db: $params.snpeff_db"
 println "snpeff data: $params.snpeff_data"
 
@@ -47,10 +48,7 @@ process align {
 	"@RG\\tID:${pair_id}\\tLB:${pair_id}\\tPL:${params.pl}\\tPM:${params.pm}\\tSM:${pair_id}"
     """
     bwa mem \
-	-K 100000000 \
-	-v 3 \
 	-t ${task.cpus} \
-	-Y \
 	-R \"${readGroup}\" \
 	$ref \
 	${reads[0]} \
@@ -273,6 +271,10 @@ process bqsr{
 	val(new_round), \
 	file("${pair_id}_recal.bam") \
 	into recalibrated_bam_ch
+    set val(pair_id), \
+	file("${pair_id}_filtered_snps_indels_${round}.vcf"), \
+	file("${pair_id}_filtered_snps_indels_${round}.vcf.idx") \
+	into filtered_snps_indels
 
     // here is where we iterate the round. 
     // keep this dynamic to allow for doing 
@@ -285,6 +287,10 @@ process bqsr{
     script:
     new_round=round + 1
     """
+    gatk MergeVcfs \
+    -I $filtered_snps -I $filtered_indels \
+    -O ${pair_id}_filtered_snps_indels_${round}.vcf
+
     echo "New Round: " $new_round
     gatk SelectVariants \
 	--exclude-filtered \
@@ -350,6 +356,7 @@ process snpEff {
     script:
     """
     java -jar \$SNPEFF_JAR -v \
+    -c $params.snpeff_config \
 	-dataDir $params.snpeff_data \
 	$params.snpeff_db \
 	$filtered_snps > ${pair_id}_filtered_snps.ann.vcf
